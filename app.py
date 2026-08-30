@@ -370,10 +370,6 @@ class QueueLessHandler(BaseHTTPRequestHandler):
         </form>
     </div>
 
-    <div class="card center">
-        <strong>📱 Scan the QueueLess QR</strong>
-        <p class="muted">The final QR will point to this deployed page.</p>
-    </div>
 
     <div class="footer">QueueLess • Simple digital queue management</div>
 </div>"""
