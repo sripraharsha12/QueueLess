@@ -19,20 +19,18 @@ QueueLess solves this by allowing customers to join the queue digitally and moni
 - View people ahead
 - View estimated waiting time
 - View active counters
-- Set a reminder for 10, 20, or 30 minutes before the estimated turn
+- Set reminders for the upcoming turn
 - Receive in-app notifications
 - See when it is their turn
-- View completed or no-show status
 
 ### Management Side
 - View the current queue
 - Monitor waiting and serving customers
-- Call the next customer
-- Assign available counters
-- Complete a service
-- Mark a customer as no-show
+- Manage counters
+- Call customers
+- Complete services
+- Mark customers as no-show
 - View queue analytics
-- Monitor counter status
 
 ## QR-Based Access
 
@@ -50,28 +48,42 @@ https://queueless-vrww.onrender.com/
 Management:
 https://queueless-vrww.onrender.com/management
 
-Health Check:
-https://queueless-vrww.onrender.com/health
-
 ## How It Works
 
-```text
 Customer scans QR
-        ↓
-QueueLess customer page
-        ↓
-Select service and join queue
-        ↓
-Receive token
-        ↓
-View queue position and ETA
-        ↓
-Set reminder
-        ↓
-Management calls customer
-        ↓
-Customer receives notification
-        ↓
-Customer proceeds to counter
-        ↓
-Service completed
+↓
+Join Queue
+↓
+Receive Token
+↓
+View Position + ETA
+↓
+Set Reminder
+↓
+Management Calls Customer
+↓
+Customer Gets Notification
+↓
+Service Completed
+
+## Technology
+
+- Python
+- SQLite
+- HTML
+- CSS
+- Python Standard Library
+
+## Project Structure
+
+QueueLess/
+├── .gitignore
+├── README.md
+├── app.py
+└── assets/
+    └── QueueLess_QR.png
+
+## How to Run Locally
+
+```bash
+python app.py
