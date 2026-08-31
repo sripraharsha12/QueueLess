@@ -11,7 +11,7 @@ from urllib.parse import parse_qs, urlparse, quote
 
 HOST = "0.0.0.0"
 PORT = int(os.environ.get("PORT", "8000"))
-DB_PATH = Path(os.environ.get("QUEUELESS_DB", str(Path(__file__).parent / "queueless.db")))
+DB_PATH = Path(__file__).parent / "queueless.db"
 
 
 def now():
@@ -244,24 +244,6 @@ th{{color:#777;font-size:12px}}
 .counter{{display:flex;justify-content:space-between;border:1px solid #e4e1da;border-radius:12px;padding:15px;margin-top:10px}}
 a{{color:#4b7167;text-decoration:none}}
 .footer{{text-align:center;color:#999;font-size:12px;margin-top:25px}}
-.status-wrap{{max-width:380px;margin:0 auto;text-align:center;padding:26px 0 20px}}
-.status-brand{{font-size:28px;font-weight:800;margin-bottom:14px}}
-.welcome{{font-size:14px;margin:0 0 8px}}
-.service-name{{font-size:14px;color:#666;margin:0}}
-.status-wrap .token{{font-size:52px;margin:24px 0 18px}}
-.status-stat{{margin:18px 0}}
-.status-label{{font-size:13px;color:#555;margin-bottom:7px}}
-.status-value{{font-size:25px;font-weight:800}}
-.status-value small{{font-size:16px}}
-.status-wrap .ok,.status-wrap .warn,.status-wrap .danger{{margin:12px 0}}
-.reminder-card{{background:#f7f7f7;border-radius:12px;padding:20px 18px;margin-top:24px;text-align:center}}
-.reminder-card h3{{margin:0 0 14px;font-size:16px}}
-.reminder-card p{{font-size:13px;color:#444;margin:0 0 14px;line-height:1.45}}
-.reminder-card select{{width:145px;padding:9px 10px;font-size:13px;margin-bottom:14px}}
-.reminder-card button{{display:block;margin:0 auto;background:#171717;padding:10px 18px;font-size:12px}}
-.reminder-enabled{{background:#edf7f1;color:#356b5b;border-radius:10px;padding:12px;margin-top:14px;font-size:13px}}
-.reminder-enabled span{{display:block;font-weight:400;margin-top:5px;color:#4f6f66}}
-.auto-refresh{{color:#777;font-size:12px;margin-top:20px}}
 @media(max-width:700px){{.grid{{grid-template-columns:1fr}}table{{min-width:760px}}.token{{font-size:48px}}}}
 </style>
 </head>
@@ -307,8 +289,6 @@ class QueueLessHandler(BaseHTTPRequestHandler):
             self.status_page(query)
         elif path == "/management":
             self.management_page()
-        elif path == "/health":
-            self.send_json({"status": "ok", "application": "QueueLess"})
         else:
             self.send_json({"error": "Not Found"}, 404)
 
@@ -446,64 +426,96 @@ class QueueLessHandler(BaseHTTPRequestHandler):
         reminder_box = ""
         if status == "waiting":
             if reminder:
-                reminder_box = '<div class="ok center" style="margin-top:15px">🔔 Reminder is enabled.</div>'
-            elif eta["estimated_wait_minutes"] >= 10:
-                reminder_box = f"""
-                <div class="reminder-card">
-                    <h3>🔔 &nbsp;Set a Reminder</h3>
-                    <p>Choose when you want to be reminded before your turn.</p>
-                    <form method="POST" action="/remind">
-                        <input type="hidden" name="queue_id" value="{queue_id}">
-                        <select name="reminder_minutes">
-                            {''.join(f'<option value="{m}">{m} minutes before</option>' for m in (10,20,30) if eta['estimated_wait_minutes'] >= m)}
-                        </select>
-                        <button type="submit">🔔 Set Reminder</button>
-                    </form>
-                </div>"""
-
-        # Customer-facing status design: simple, mobile-friendly, and
-        # based on the earlier QueueLess reminder screen.
-        if reminder:
-            reminder_status = (
-                '<div class="reminder-enabled">🔔 <strong>Reminder enabled</strong>'
-                f'<span>You will be reminded at approximately {reminder["reminder_minutes"]} minutes before your turn.</span></div>'
-                if not reminder["sent"] else
-                '<div class="reminder-enabled">🔔 <strong>Reminder sent</strong><span>Your QueueLess reminder has been delivered.</span></div>'
-            )
-        else:
-            reminder_status = ""
+                if reminder["sent"]:
+                    reminder_box = f"""
+                    <div class="reminder-set">
+                        <div class="reminder-title">🔔 Reminder sent</div>
+                        <div>Your {reminder["reminder_minutes"]}-minute reminder has been triggered.</div>
+                    </div>"""
+                else:
+                    reminder_box = f"""
+                    <div class="reminder-set">
+                        <div class="reminder-title">✅ Reminder set</div>
+                        <div>You selected a reminder {reminder["reminder_minutes"]} minutes before your turn.</div>
+                    </div>"""
+            else:
+                reminder_options = "".join(
+                    f'<option value="{m}">{m} minutes before</option>'
+                    for m in (10, 20, 30)
+                    if eta["estimated_wait_minutes"] >= m
+                )
+                if reminder_options:
+                    reminder_box = f"""
+                    <div class="reminder-card">
+                        <div class="reminder-title">🔔 Set a Reminder</div>
+                        <p>Choose when you want to be reminded before your turn.</p>
+                        <form method="POST" action="/remind">
+                            <input type="hidden" name="queue_id" value="{queue_id}">
+                            <select name="reminder_minutes" required>{reminder_options}</select>
+                            <button type="submit">🔔 Set Reminder</button>
+                        </form>
+                    </div>"""
+                else:
+                    reminder_box = """
+                    <div class="reminder-card">
+                        <div class="reminder-title">🔔 Set a Reminder</div>
+                        <p>Your turn is less than 10 minutes away. Keep this page open for the live turn notification.</p>
+                        <button type="button" disabled style="opacity:.55;cursor:not-allowed;width:100%;margin-top:8px">Reminder unavailable</button>
+                    </div>"""
 
         body = f"""
 <div class="status-wrap">
     <div class="status-brand">QueueLess</div>
-    <p class="welcome">Welcome, <strong>{html.escape(queue['customer_name'])}</strong></p>
-    <p class="service-name">{html.escape(queue['service_name'])}</p>
+    <div class="status-subtitle">Your queue status</div>
 
-    <div class="token">{html.escape(queue['token'])}</div>
+    <div class="status-card">
+        <p class="welcome">Welcome, <strong>{html.escape(queue["customer_name"])}</strong></p>
+        <p class="service-name">{html.escape(queue["service_name"])}</p>
+        <div class="big-token">{html.escape(queue["token"])}</div>
+        {message}
+        {notice}
 
-    {message}
-    {notice}
-
-    <div class="status-stat">
-        <div class="status-label">People ahead</div>
-        <div class="status-value">{eta['people_ahead']}</div>
-    </div>
-
-    <div class="status-stat">
-        <div class="status-label">Estimated waiting time</div>
-        <div class="status-value">{eta['estimated_wait_minutes']} <small>min</small></div>
-    </div>
-
-    <div class="status-stat">
-        <div class="status-label">Active counters</div>
-        <div class="status-value">{eta['active_counters']}</div>
+        <div class="status-stats">
+            <div><div class="stat-label">People ahead</div><div class="stat-value">{eta["people_ahead"]}</div></div>
+            <div><div class="stat-label">Estimated waiting time</div><div class="stat-value">{eta["estimated_wait_minutes"]} min</div></div>
+            <div><div class="stat-label">Active counters</div><div class="stat-value">{eta["active_counters"]}</div></div>
+        </div>
     </div>
 
     {reminder_box}
-    {reminder_status}
+    <div class="auto-refresh">This page automatically refreshes.</div>
+</div>
 
-    <p class="auto-refresh">This page automatically refreshes.</p>
-</div>"""
+<style>
+.status-wrap{{max-width:560px;margin:0 auto;text-align:center}}
+.status-brand{{font-size:34px;font-weight:800;margin-top:10px}}
+.status-subtitle{{color:#77746d;font-size:15px;margin:3px 0 18px}}
+.status-card{{background:#fff;border:1px solid #e3dfd7;border-radius:16px;padding:26px 22px;box-shadow:0 4px 18px rgba(0,0,0,.04)}}
+.welcome{{margin:0;font-size:16px}}
+.service-name{{margin:8px 0 0;color:#666;font-size:15px}}
+.big-token{{font-size:58px;font-weight:800;letter-spacing:1px;margin:18px 0 20px}}
+.status-message{{border-radius:10px;padding:14px;margin:12px 0;font-size:15px}}
+.waiting-box{{background:#eef8ef;color:#3d6f5e}}
+.serving-box{{background:#e7f1ff;color:#315d88}}
+.completed-box{{background:#f0f0f0;color:#555}}
+.danger-box{{background:#faecec;color:#975656}}
+.notification-box{{background:#fff4db;border:1px solid #f0d695;border-radius:10px;padding:13px;margin-top:12px;text-align:left;color:#765d20}}
+.notification-text{{margin-top:5px}}
+.status-stats{{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:18px}}
+.status-stats>div{{background:#faf9f6;border:1px solid #e6e2da;border-radius:12px;padding:14px 8px}}
+.stat-label{{font-size:11px;color:#77746d;line-height:1.25}}
+.stat-value{{font-size:24px;font-weight:800;margin-top:7px}}
+.reminder-card,.reminder-set{{margin-top:14px;background:#f8f8f8;border-radius:12px;padding:20px;border:1px solid #ece9e3}}
+.reminder-card{{text-align:center}}
+.reminder-set{{background:#edf8f2;color:#477464}}
+.reminder-title{{font-weight:800;font-size:16px;margin-bottom:8px}}
+.reminder-card p{{color:#666;font-size:14px;margin:6px 0 14px}}
+.reminder-card select{{width:100%;padding:12px;border:1px solid #d6d1c8;border-radius:9px;background:#fff;font-size:15px}}
+.reminder-card button{{margin-top:12px;width:100%;padding:13px;border:0;border-radius:9px;background:#111;color:#fff;font-weight:700;cursor:pointer}}
+.auto-refresh{{color:#999;font-size:12px;margin:18px 0 5px}}
+@media(max-width:600px){{.status-stats{{grid-template-columns:repeat(3,1fr)}}.big-token{{font-size:50px}}}}
+</style>
+"""
         self.send_html(page_shell(f"{queue['token']} - QueueLess", body, refresh=10))
 
     def management_page(self):
@@ -511,7 +523,7 @@ class QueueLessHandler(BaseHTTPRequestHandler):
         try:
             queue = con.execute(
                 """SELECT q.id,q.token,c.name AS customer_name,s.name AS service_name,
-                          q.status,q.counter_id,q.joined_at
+                          q.status,q.counter_id,q.joined_at,q.started_at
                    FROM queue_entries q
                    JOIN customers c ON c.id=q.customer_id
                    JOIN services s ON s.id=q.service_id
@@ -523,6 +535,7 @@ class QueueLessHandler(BaseHTTPRequestHandler):
                 """SELECT
                     COUNT(CASE WHEN status='completed' THEN 1 END) AS served,
                     COUNT(CASE WHEN status='no_show' THEN 1 END) AS no_show,
+                    COUNT(*) AS total,
                     AVG(CASE WHEN status='completed' AND started_at IS NOT NULL AND completed_at IS NOT NULL
                         THEN (julianday(completed_at)-julianday(started_at))*24*60 END) AS avg_service,
                     AVG(CASE WHEN status='completed' AND joined_at IS NOT NULL AND started_at IS NOT NULL
@@ -534,75 +547,176 @@ class QueueLessHandler(BaseHTTPRequestHandler):
 
         waiting = sum(1 for q in queue if q["status"] == "waiting")
         serving = sum(1 for q in queue if q["status"] == "serving")
+        active = waiting + serving
+        served = analytics["served"] or 0
+        no_show = analytics["no_show"] or 0
+        total_processed = served + no_show
+        avg_wait = round(analytics["avg_wait"], 1) if analytics["avg_wait"] is not None else 0
+        avg_service = round(analytics["avg_service"], 1) if analytics["avg_service"] is not None else 0
+        service_rate = round((served / total_processed) * 100) if total_processed else 0
+        busy_counters = sum(1 for c in counters if c["status"] in ("busy", "serving"))
+        counter_util = round((busy_counters / len(counters)) * 100) if counters else 0
 
         rows = ""
         for q in queue:
             if q["status"] == "waiting":
                 action = f"""
                 <div class="actions">
-                    <form method="POST" action="/call-next"><input type="hidden" name="queue_id" value="{q['id']}"><button class="small">CALL</button></form>
-                    <form method="POST" action="/no-show"><input type="hidden" name="queue_id" value="{q['id']}"><button class="small" style="background:#955858">NO-SHOW</button></form>
+                    <form method="POST" action="/call-next">
+                        <input type="hidden" name="queue_id" value="{q['id']}">
+                        <button class="action-btn call" type="submit">CALL</button>
+                    </form>
+                    <form method="POST" action="/no-show">
+                        <input type="hidden" name="queue_id" value="{q['id']}">
+                        <button class="action-btn no-show" type="submit">NO-SHOW</button>
+                    </form>
                 </div>"""
+            elif q["status"] == "serving":
+                action = f"""
+                <form method="POST" action="/complete-service">
+                    <input type="hidden" name="queue_id" value="{q['id']}">
+                    <button class="action-btn complete" type="submit">COMPLETE</button>
+                </form>"""
             else:
                 action = ""
-                if q["status"] == "serving":
-                    action = f"<form method=\"POST\" action=\"/complete-service\"><input type=\"hidden\" name=\"queue_id\" value=\"{q['id']}\"><button class=\"small\">COMPLETE</button></form>"
-            rows += f"""<tr>
-                <td><strong>{html.escape(q['token'])}</strong></td>
-                <td>{html.escape(q['customer_name'])}</td>
+            rows += f"""
+            <tr>
+                <td><span class="token-chip">{html.escape(q['token'])}</span></td>
+                <td><strong>{html.escape(q['customer_name'])}</strong></td>
                 <td>{html.escape(q['service_name'])}</td>
                 <td><span class="badge {q['status']}">{q['status'].upper()}</span></td>
-                <td>{q['counter_id'] or '-'}</td>
+                <td>{q['counter_id'] or '—'}</td>
                 <td>{action}</td>
             </tr>"""
-
         if not rows:
-            rows = '<tr><td colspan="6" class="center">No active customers.</td></tr>'
+            rows = '<tr><td colspan="6" class="empty">No active customers right now.</td></tr>'
 
         counter_html = "".join(
-            f'<div class="counter"><strong>{html.escape(c["name"])}</strong><span>{c["status"].upper()}</span></div>'
+            f"""
+            <div class="counter-card">
+                <div class="counter-top">
+                    <div>
+                        <div class="counter-name">{html.escape(c['name'])}</div>
+                        <div class="counter-sub">Counter {c['id']}</div>
+                    </div>
+                    <span class="counter-pill {'busy' if c['status'] in ('busy','serving') else 'free'}">
+                        {'BUSY' if c['status'] in ('busy','serving') else 'AVAILABLE'}
+                    </span>
+                </div>
+                <div class="counter-line"><span></span></div>
+            </div>
+            """
             for c in counters
-        )
+        ) or '<div class="empty">No counters configured.</div>'
 
-        avg_wait = round(analytics["avg_wait"], 1) if analytics["avg_wait"] is not None else 0
-        avg_service = round(analytics["avg_service"], 1) if analytics["avg_service"] is not None else 0
+        wait_width = min(100, max(0, int(avg_wait * 5)))
+        service_width = min(100, max(0, int(avg_service * 5)))
 
         body = f"""
-<div class="brand">QueueLess <span class="muted" style="font-size:14px;font-weight:400">Management</span></div>
-<div class="muted">Live queue control and analytics</div>
+<style>
+.mgmt-shell{{max-width:1180px;margin:0 auto}}
+.mgmt-header{{display:flex;justify-content:space-between;align-items:flex-end;gap:20px;margin-bottom:28px}}
+.mgmt-title{{font-size:34px;font-weight:800;letter-spacing:-1px;margin:0}}
+.mgmt-subtitle{{color:#7d7a73;margin-top:6px}}
+.live-dot{{display:inline-flex;align-items:center;gap:8px;padding:8px 12px;border-radius:999px;background:#edf8f4;color:#4f8275;font-size:13px;font-weight:700;white-space:nowrap}}
+.live-dot::before{{content:"";width:8px;height:8px;border-radius:50%;background:#4f8275}}
+.kpis{{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:18px}}
+.kpi{{background:linear-gradient(145deg,#fff,#f7faf8);border:1px solid #e2e7e4;border-radius:18px;padding:20px;position:relative;overflow:hidden}}
+.kpi::after{{content:"";position:absolute;right:-28px;top:-28px;width:90px;height:90px;border-radius:50%;background:#eaf2ef}}
+.kpi-label{{color:#7d7a73;font-size:12px;font-weight:700;letter-spacing:.06em;margin-bottom:10px}}
+.kpi-value{{font-size:34px;font-weight:800;position:relative;z-index:1}}
+.kpi-note{{font-size:12px;color:#8c8982;margin-top:7px;position:relative;z-index:1}}
+.dashboard-grid{{display:grid;grid-template-columns:1.65fr 1fr;gap:18px;align-items:start}}
+.card.mgmt-card{{margin-bottom:0;border-radius:18px;padding:22px}}
+.section-head{{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:18px}}
+.section-head h2{{margin:0;font-size:20px}}
+.section-caption{{color:#8c8982;font-size:13px;margin-top:4px}}
+.table-wrap{{overflow-x:auto}}
+table{{width:100%;border-collapse:collapse;min-width:760px}}
+th{{color:#8a877f;font-size:11px;text-transform:uppercase;letter-spacing:.06em;padding:11px 10px;border-bottom:1px solid #ece9e2;text-align:left}}
+td{{padding:14px 10px;border-bottom:1px solid #f0eee9;font-size:14px}}
+.token-chip{{display:inline-block;font-weight:800;background:#edf4f1;color:#4f8275;border:1px solid #dce9e4;padding:7px 10px;border-radius:10px}}
+.badge{{display:inline-block;padding:6px 10px;border-radius:999px;font-size:10px;font-weight:800;letter-spacing:.04em}}
+.badge.waiting{{background:#fff6db;color:#9a7b19}}
+.badge.serving{{background:#e8f5ef;color:#3d7664}}
+.badge.accepted{{background:#eef0ff;color:#5963a9}}
+.actions{{display:flex;gap:7px;align-items:center}}
+.action-btn{{width:auto;height:auto;border:0;border-radius:9px;padding:9px 12px;color:#fff;font-size:11px;font-weight:800;cursor:pointer}}
+.call{{background:#4f8275}}
+.complete{{background:#5666a8}}
+.no-show{{background:#a46262}}
+.analytics-grid{{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}}
+.mini{{background:#fafbf9;border:1px solid #ecefe9;border-radius:14px;padding:15px}}
+.mini .label{{font-size:12px;color:#8b887f}}
+.mini .big{{font-size:24px;font-weight:800;margin-top:5px}}
+.meter{{margin-top:8px;height:8px;border-radius:999px;background:#e9ece9;overflow:hidden}}
+.meter>span{{display:block;height:100%;border-radius:999px;background:#6d9b8e}}
+.counter-list{{display:grid;gap:11px}}
+.counter-card{{border:1px solid #e8ebe7;background:#fbfcfb;border-radius:14px;padding:15px}}
+.counter-top{{display:flex;justify-content:space-between;align-items:center;gap:12px}}
+.counter-name{{font-weight:800}}
+.counter-sub{{color:#959188;font-size:12px;margin-top:3px}}
+.counter-pill{{padding:6px 10px;border-radius:999px;font-size:10px;font-weight:800}}
+.counter-pill.free{{background:#edf8f2;color:#4d806c}}
+.counter-pill.busy{{background:#fff1e6;color:#a56c3b}}
+.counter-line{{margin-top:12px;height:4px;border-radius:999px;background:#e8ece8}}
+.counter-line span{{display:block;width:55%;height:100%;border-radius:999px;background:#6d9b8e}}
+.empty{{color:#959188;padding:28px 10px;text-align:center}}
+@media(max-width:900px){{.kpis{{grid-template-columns:repeat(2,1fr)}}.dashboard-grid{{grid-template-columns:1fr}}}}
+@media(max-width:560px){{.kpis{{grid-template-columns:1fr}}.mgmt-header{{align-items:flex-start;flex-direction:column}}.analytics-grid{{grid-template-columns:1fr}}.mgmt-title{{font-size:29px}}}}
+</style>
 
-<div class="grid" style="margin-top:25px">
-    <div class="stat"><div class="label">Waiting</div><div class="value">{waiting}</div></div>
-    <div class="stat"><div class="label">Serving</div><div class="value">{serving}</div></div>
-    <div class="stat"><div class="label">Active</div><div class="value">{len(queue)}</div></div>
-</div>
-
-<div class="card">
-    <h2>Current Queue</h2>
-    <div style="overflow-x:auto">
-    <table>
-        <tr><th>Token</th><th>Customer</th><th>Service</th><th>Status</th><th>Counter</th><th>Action</th></tr>
-        {rows}
-    </table>
+<div class="mgmt-shell">
+    <div class="mgmt-header">
+        <div>
+            <div class="brand" style="font-size:15px;margin-bottom:7px;">QueueLess</div>
+            <h1 class="mgmt-title">Management Dashboard</h1>
+            <div class="mgmt-subtitle">Monitor the queue, counters, service flow and performance.</div>
+        </div>
+        <div class="live-dot">LIVE • refreshes every 5 seconds</div>
     </div>
-</div>
 
-<div class="card">
-    <h2>Queue Analytics</h2>
-    <div class="grid">
-        <div class="stat"><div class="label">Total Served</div><div class="value">{analytics['served'] or 0}</div></div>
-        <div class="stat"><div class="label">No-Shows</div><div class="value">{analytics['no_show'] or 0}</div></div>
-        <div class="stat"><div class="label">Average Wait</div><div class="value">{avg_wait}<small> min</small></div></div>
+    <div class="kpis">
+        <div class="kpi"><div class="kpi-label">WAITING</div><div class="kpi-value">{waiting}</div><div class="kpi-note">Customers currently waiting</div></div>
+        <div class="kpi"><div class="kpi-label">SERVING</div><div class="kpi-value">{serving}</div><div class="kpi-note">Customers at counters</div></div>
+        <div class="kpi"><div class="kpi-label">SERVED</div><div class="kpi-value">{served}</div><div class="kpi-note">Completed services</div></div>
+        <div class="kpi"><div class="kpi-label">SERVICE RATE</div><div class="kpi-value">{service_rate}%</div><div class="kpi-note">Completed vs processed</div></div>
     </div>
-    <div class="stat" style="margin-top:14px"><div class="label">Average Service Time</div><div class="value">{avg_service}<small> min</small></div></div>
-</div>
 
-<div class="card">
-    <h2>Counters</h2>
-    {counter_html}
-</div>
+    <div class="dashboard-grid">
+        <div class="card mgmt-card">
+            <div class="section-head">
+                <div><h2>Current Queue</h2><div class="section-caption">Manage customers in real time.</div></div>
+                <span class="badge serving">{active} ACTIVE</span>
+            </div>
+            <div class="table-wrap">
+                <table>
+                    <thead><tr><th>Token</th><th>Customer</th><th>Service</th><th>Status</th><th>Counter</th><th>Action</th></tr></thead>
+                    <tbody>{rows}</tbody>
+                </table>
+            </div>
+        </div>
 
-<div class="footer">Management dashboard refreshes every 5 seconds.</div>"""
+        <div style="display:grid;gap:18px;">
+            <div class="card mgmt-card">
+                <div class="section-head"><div><h2>Queue Analytics</h2><div class="section-caption">Performance overview</div></div></div>
+                <div class="analytics-grid">
+                    <div class="mini"><div class="label">Average wait</div><div class="big">{avg_wait} min</div><div class="meter"><span style="width:{wait_width}%"></span></div></div>
+                    <div class="mini"><div class="label">Average service</div><div class="big">{avg_service} min</div><div class="meter"><span style="width:{service_width}%"></span></div></div>
+                    <div class="mini"><div class="label">No-shows</div><div class="big">{no_show}</div><div class="kpi-note">Customers missed</div></div>
+                    <div class="mini"><div class="label">Counter usage</div><div class="big">{counter_util}%</div><div class="meter"><span style="width:{counter_util}%"></span></div></div>
+                </div>
+            </div>
+
+            <div class="card mgmt-card">
+                <div class="section-head"><div><h2>Counters</h2><div class="section-caption">Live counter availability</div></div></div>
+                <div class="counter-list">{counter_html}</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="footer" style="margin-top:20px;">QueueLess • Smart digital queue management</div>
+</div>"""
         self.send_html(page_shell("QueueLess Management", body, refresh=5))
 
     def call_next(self, data):
@@ -746,7 +860,6 @@ def main():
     print(f"QueueLess running on port {PORT}")
     print(f"Customer:   http://localhost:{PORT}/")
     print(f"Management: http://localhost:{PORT}/management")
-    print(f"Health:     http://localhost:{PORT}/health")
     try:
         server.serve_forever()
     except KeyboardInterrupt:
